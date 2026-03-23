@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OC Sentinel V2 · Angel One Live</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<!-- SockJS + STOMP: connects browser to Spring Boot WebSocket -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sockjs-client/1.6.1/sockjs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/stomp.js/2.3.3/stomp.min.js"></script>
+<style>
+:root{
+  --bg:#04080d;--s1:#080f18;--s2:#0c1624;--s3:#112030;
+  --bdr:rgba(0,180,255,.13);--bdr2:rgba(0,180,255,.06);
+  --acc:#00c8ff;--acc2:#005599;
+  --grn:#00e87a;--red:#ff2b4e;--amb:#ffb700;--pur:#a855f7;
+  --txt:#b8d8ef;--txt2:#6899b8;--txt3:#3a6080;
+  --mono:'JetBrains Mono',monospace;--disp:'Rajdhani',sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--bg);color:var(--txt);font-family:var(--mono);font-size:13px;min-height:100vh;overflow-x:hidden;}
+body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.04) 2px,rgba(0,0,0,.04) 4px);pointer-events:none;z-index:999;}
+::-webkit-scrollbar{width:4px;height:4px;}
+::-webkit-scrollbar-thumb{background:var(--bdr);}
+
+/* ── LOGIN ── */
+#loginScreen{position:fixed;inset:0;z-index:500;background:var(--bg);display:flex;align-items:center;justify-content:center;}
+.lbox{background:var(--s1);border:1px solid var(--bdr);border-radius:14px;padding:36px 40px;width:440px;max-width:94vw;}
+.llogo{font-family:var(--disp);font-size:24px;font-weight:700;color:var(--acc);letter-spacing:4px;text-align:center;margin-bottom:4px;}
+.lsub{text-align:center;font-size:10px;letter-spacing:2px;color:var(--txt3);margin-bottom:22px;}
+.v2tag{display:inline-block;background:rgba(0,200,255,.1);border:1px solid rgba(0,200,255,.3);border-radius:4px;padding:2px 10px;font-size:9px;letter-spacing:2px;color:var(--acc);margin-bottom:18px;width:100%;text-align:center;}
+.lfld{display:flex;flex-direction:column;gap:5px;margin-bottom:12px;}
+.lfld label{font-size:9px;letter-spacing:2px;color:var(--txt3);text-transform:uppercase;}
+.lfld input{background:var(--s2);border:1px solid var(--bdr);border-radius:6px;color:var(--txt);font-family:var(--mono);font-size:13px;padding:10px 13px;outline:none;transition:border-color .15s;}
+.lfld input:focus{border-color:var(--acc);}
+.url-row{display:flex;gap:8px;}
+.url-row input{flex:1;}
+.test-btn{background:var(--s2);border:1px solid var(--bdr);border-radius:6px;color:var(--txt2);font-family:var(--mono);font-size:11px;padding:10px 14px;cursor:pointer;white-space:nowrap;}
+.test-btn:hover{border-color:var(--acc);color:var(--acc);}
+.conn-ok{background:rgba(0,232,122,.07);border:1px solid rgba(0,232,122,.3);border-radius:6px;padding:7px 12px;font-size:11px;color:var(--grn);margin-bottom:10px;display:none;}
+.conn-ok.show{display:block;}
+.btn-login{width:100%;background:linear-gradient(135deg,var(--acc),var(--acc2));border:none;border-radius:7px;color:#000;font-family:var(--disp);font-size:17px;font-weight:700;letter-spacing:2px;padding:13px;cursor:pointer;transition:all .18s;text-transform:uppercase;display:flex;align-items:center;justify-content:center;gap:10px;margin-top:6px;}
+.btn-login:hover{transform:translateY(-1px);box-shadow:0 6px 28px rgba(0,200,255,.35);}
+.btn-login:disabled{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none;}
+.lspin{width:15px;height:15px;border:2px solid rgba(0,0,0,.3);border-top-color:#000;border-radius:50%;animation:rot .7s linear infinite;display:none;}
+.lerr{background:rgba(255,43,78,.07);border:1px solid rgba(255,43,78,.3);border-radius:6px;padding:9px 13px;color:var(--red);font-size:11px;margin-top:10px;display:none;line-height:1.6;}
+.lerr.show{display:block;}
+@keyframes rot{to{transform:rotate(360deg);}}
+
+/* ── HEADER ── */
+header{background:var(--s1);border-bottom:1px solid var(--bdr);padding:0 22px;display:flex;align-items:center;justify-content:space-between;height:52px;position:sticky;top:0;z-index:200;}
+.logo{font-family:var(--disp);font-size:21px;font-weight:700;letter-spacing:4px;color:var(--acc);display:flex;align-items:center;gap:9px;}
+.pulse{width:8px;height:8px;border-radius:50%;background:var(--grn);animation:pulse 2s infinite;}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.3;transform:scale(.7);}}
+.hdr-r{display:flex;align-items:center;gap:14px;}
+.ws-pill{display:flex;align-items:center;gap:6px;background:var(--s2);border:1px solid var(--bdr);border-radius:20px;padding:4px 12px;font-size:10px;letter-spacing:1px;}
+.wsdot{width:7px;height:7px;border-radius:50%;background:var(--txt3);transition:background .3s;}
+.wsdot.conn{background:var(--grn);}
+.wsdot.warn{background:var(--amb);}
+.wsdot.err{background:var(--red);}
+#wsTxt{font-size:10px;color:var(--txt2);letter-spacing:1px;}
+.clock{font-size:13px;color:var(--amb);letter-spacing:2px;font-weight:600;}
+.btn-lo{background:var(--s2);border:1px solid var(--bdr);border-radius:5px;color:var(--red);font-family:var(--mono);font-size:10px;padding:4px 10px;cursor:pointer;}
+
+/* ── TICKER ── */
+.tkbar{background:var(--s1);border:1px solid var(--bdr);border-radius:7px;overflow:hidden;height:30px;display:flex;align-items:center;margin:11px 22px 0;}
+.tklbl{background:var(--grn);color:#000;font-family:var(--disp);font-size:9px;font-weight:700;letter-spacing:2px;padding:0 13px;height:100%;display:flex;align-items:center;white-space:nowrap;}
+.tkinner{overflow:hidden;flex:1;}
+.tktrack{display:inline-block;animation:ticker 40s linear infinite;font-size:11px;color:var(--txt2);white-space:nowrap;}
+@keyframes ticker{0%{transform:translateX(100%);}100%{transform:translateX(-100%);}}
+.tki{display:inline-block;margin-right:50px;}
+.up{color:var(--grn);}.dn{color:var(--red);}
+
+/* ── WRAP ── */
+.wrap{max-width:1480px;margin:0 auto;padding:14px 22px;display:grid;gap:12px;}
+
+/* ── CTRL ── */
+.ctrl{background:var(--s1);border:1px solid var(--bdr);border-radius:8px;padding:13px 17px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+.tabs{display:flex;gap:3px;background:var(--bg);border-radius:6px;padding:3px;}
+.tab{padding:7px 18px;border:none;background:transparent;color:var(--txt2);font-family:var(--disp);font-size:14px;font-weight:700;letter-spacing:1.5px;cursor:pointer;border-radius:4px;transition:all .18s;}
+.tab.on{background:var(--acc);color:#000;}
+.tab:hover:not(.on){background:var(--s3);color:var(--txt);}
+.expsel{background:var(--s2);border:1px solid var(--bdr);border-radius:6px;color:var(--txt);font-family:var(--mono);font-size:12px;padding:8px 11px;cursor:pointer;outline:none;}
+.btn-ai{background:linear-gradient(135deg,var(--acc),var(--acc2));border:none;border-radius:6px;color:#000;font-family:var(--disp);font-size:14px;font-weight:700;letter-spacing:2px;padding:9px 28px;cursor:pointer;transition:all .18s;display:flex;align-items:center;gap:8px;}
+.btn-ai:hover{transform:translateY(-1px);box-shadow:0 4px 22px rgba(0,200,255,.35);}
+.btn-ai:disabled{opacity:.5;cursor:not-allowed;transform:none;}
+.aspin{width:13px;height:13px;border:2px solid rgba(0,0,0,.3);border-top-color:#000;border-radius:50%;animation:rot .7s linear infinite;display:none;}
+.btn-ai.ld .aspin{display:block;}.btn-ai.ld .atxt{display:none;}
+.src-tag{padding:3px 10px;font-size:9px;letter-spacing:1.5px;font-family:var(--disp);border-radius:4px;border:1px solid var(--bdr);color:var(--txt3);}
+.src-tag.v2{border-color:rgba(0,232,122,.4);color:var(--grn);background:rgba(0,232,122,.07);}
+.src-tag.rest{border-color:rgba(255,183,0,.4);color:var(--amb);background:rgba(255,183,0,.07);}
+.ar-wrap{display:flex;align-items:center;gap:7px;color:var(--txt2);font-size:11px;margin-left:auto;}
+.ar-wrap input{accent-color:var(--acc);}
+
+/* ── STATS ── */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:9px;}
+.stat{background:var(--s1);border:1px solid var(--bdr);border-radius:8px;padding:11px 14px;position:relative;overflow:hidden;}
+.stat::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:var(--acc);}
+.stat.g::before{background:var(--grn);}.stat.r::before{background:var(--red);}
+.stat.a::before{background:var(--amb);}.stat.p::before{background:var(--pur);}
+.slbl{font-size:9px;color:var(--txt3);letter-spacing:2px;text-transform:uppercase;margin-bottom:4px;}
+.sval{font-size:19px;font-weight:700;color:var(--txt);letter-spacing:1px;transition:color .4s;}
+.sval.flash{color:var(--acc);}
+.ssub{font-size:10px;color:var(--txt2);margin-top:2px;}
+
+/* ── MAIN ── */
+.main{display:grid;grid-template-columns:360px 1fr;gap:12px;align-items:start;}
+@media(max-width:900px){.main{grid-template-columns:1fr;}}
+
+/* ── SIGNAL ── */
+.sigcard{background:var(--s1);border:1px solid var(--bdr);border-radius:10px;padding:20px;position:sticky;top:64px;}
+.sighdr{font-family:var(--disp);font-size:9px;letter-spacing:3px;color:var(--txt3);text-transform:uppercase;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;}
+.sigbadge{font-family:var(--disp);font-size:30px;font-weight:700;letter-spacing:2px;text-align:center;padding:18px 14px;border-radius:8px;margin-bottom:16px;text-transform:uppercase;line-height:1.2;transition:all .4s;}
+.sigbadge.wait{background:var(--s2);border:2px solid var(--bdr);color:var(--txt3);font-size:13px;}
+.sigbadge.bce{background:rgba(0,232,122,.08);border:2px solid var(--grn);color:var(--grn);text-shadow:0 0 20px rgba(0,232,122,.4);}
+.sigbadge.bpe{background:rgba(255,43,78,.08);border:2px solid var(--red);color:var(--red);text-shadow:0 0 20px rgba(255,43,78,.4);}
+.sigbadge.nt{background:rgba(255,183,0,.08);border:2px solid var(--amb);color:var(--amb);}
+.sigrows{display:grid;gap:7px;margin-bottom:14px;}
+.sigrow{display:flex;justify-content:space-between;align-items:center;padding:9px 12px;background:var(--s2);border-radius:6px;border-left:3px solid transparent;}
+.sigrow.en{border-left-color:var(--acc);}.sigrow.sl{border-left-color:var(--red);}.sigrow.tg{border-left-color:var(--grn);}
+.rlbl{font-size:9px;letter-spacing:2px;color:var(--txt2);text-transform:uppercase;}
+.rval{font-size:14px;font-weight:700;color:var(--txt);}
+.kls{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:14px;}
+.kl{background:var(--s2);border-radius:6px;padding:8px 11px;text-align:center;}
+.kl-l{font-size:9px;letter-spacing:1.5px;color:var(--txt3);text-transform:uppercase;margin-bottom:3px;}
+.kl-v{font-size:14px;font-weight:700;}
+.confwrap{margin-bottom:13px;}
+.conflbl{display:flex;justify-content:space-between;font-size:9px;color:var(--txt3);letter-spacing:1px;margin-bottom:5px;text-transform:uppercase;}
+.confbar{height:5px;background:var(--s2);border-radius:3px;overflow:hidden;}
+.conffill{height:100%;background:linear-gradient(90deg,var(--acc),var(--grn));border-radius:3px;width:0%;transition:width 1.2s ease;}
+.rsntitle{font-size:9px;letter-spacing:2px;color:var(--txt3);text-transform:uppercase;margin-bottom:6px;}
+.rsnbox{background:var(--s2);border:1px solid var(--bdr2);border-radius:6px;padding:11px;font-size:11px;line-height:1.75;color:var(--txt2);max-height:180px;overflow-y:auto;}
+
+/* ── OC TABLE ── */
+.ocpanel{background:var(--s1);border:1px solid var(--bdr);border-radius:10px;overflow:hidden;}
+.ochdr{padding:12px 17px;border-bottom:1px solid var(--bdr);display:flex;align-items:center;justify-content:space-between;font-family:var(--disp);font-size:11px;letter-spacing:2px;color:var(--txt2);text-transform:uppercase;}
+.ocwrap{overflow-x:auto;max-height:520px;overflow-y:auto;}
+table{width:100%;border-collapse:collapse;font-size:12px;}
+thead th{background:var(--s2);padding:8px 10px;text-align:right;font-size:9px;letter-spacing:1.5px;color:var(--txt3);text-transform:uppercase;white-space:nowrap;position:sticky;top:0;z-index:10;}
+th.sc{text-align:center;background:rgba(0,200,255,.05);color:var(--acc);}
+th.ce{color:var(--grn);}th.pe{color:var(--red);}
+tbody tr{border-bottom:1px solid var(--bdr2);transition:background .1s;}
+tbody tr:hover{background:rgba(0,200,255,.03);}
+tbody tr.atm{background:rgba(0,200,255,.07);border-bottom:1px solid rgba(0,200,255,.22);}
+tbody tr.atm td{font-weight:600;}
+td{padding:7px 10px;text-align:right;color:var(--txt);white-space:nowrap;transition:color .3s;}
+td.sk{text-align:center;font-weight:700;color:var(--acc);background:rgba(0,200,255,.04);border-left:1px solid var(--bdr2);border-right:1px solid var(--bdr2);}
+.atm-tag{font-size:8px;letter-spacing:2px;color:var(--acc);display:block;text-align:center;}
+.barcell{display:flex;align-items:center;justify-content:flex-end;gap:4px;}
+.obar{height:4px;border-radius:2px;min-width:2px;transition:width .5s;}
+.cb{background:var(--grn);}.pb{background:var(--red);}
+.pos{color:var(--grn);}.neg{color:var(--red);}.mt{color:var(--txt2);}
+.empty{padding:55px 20px;text-align:center;color:var(--txt3);}
+.empty .ico{font-size:32px;margin-bottom:10px;opacity:.3;}
+.empty p{font-family:var(--disp);font-size:12px;letter-spacing:2px;}
+
+/* ── LOG ── */
+.logbox{background:var(--s1);border:1px solid var(--bdr);border-radius:8px;padding:12px 16px;}
+.loghdr{font-size:9px;letter-spacing:2px;color:var(--txt3);text-transform:uppercase;margin-bottom:8px;}
+.logbody{max-height:80px;overflow-y:auto;font-size:10px;line-height:1.8;}
+.ll{color:var(--txt2);}.ll.ok{color:var(--grn);}.ll.err{color:var(--red);}.ll.inf{color:var(--acc);}.ll.warn{color:var(--amb);}
+
+/* ── HISTORY ── */
+.hist{background:var(--s1);border:1px solid var(--bdr);border-radius:10px;overflow:hidden;}
+.histhdr{padding:12px 17px;border-bottom:1px solid var(--bdr);font-family:var(--disp);font-size:11px;letter-spacing:2px;color:var(--txt2);text-transform:uppercase;}
+.histlist{max-height:190px;overflow-y:auto;}
+.hi{padding:8px 17px;border-bottom:1px solid var(--bdr2);display:flex;align-items:center;gap:9px;font-size:11px;flex-wrap:wrap;}
+.hbadge{font-size:9px;font-weight:700;padding:3px 8px;border-radius:3px;font-family:var(--disp);letter-spacing:1px;white-space:nowrap;}
+.hce{background:rgba(0,232,122,.12);color:var(--grn);}.hpe{background:rgba(255,43,78,.12);color:var(--red);}.hnt{background:rgba(255,183,0,.12);color:var(--amb);}
+.hempty{padding:26px 17px;text-align:center;color:var(--txt3);font-size:11px;letter-spacing:1px;}
+</style>
+</head>
+<body>
+
+<!-- ═══ LOGIN ═══ -->
+<div id="loginScreen">
+  <div class="lbox">
+    <div class="llogo">OC SENTINEL</div>
+    <div class="lsub">ANGEL ONE SMARTAPI</div>
+    <div class="v2tag">⚡ WEBSOCKET V2 · BINARY FRAME · REAL-TIME</div>
+
+    <div class="lfld">
+      <label>Backend URL (Render / Railway)</label>
+      <div class="url-row">
+        <input type="text" id="l_url" placeholder="https://oc-sentinel.onrender.com">
+        <button class="test-btn" onclick="testBackend()">TEST</button>
+      </div>
+    </div>
+    <div class="conn-ok" id="connOk">✅ Backend reachable — WebSocket V2 ready</div>
+
+    <div class="lfld">
+      <label>Client ID</label>
+      <input type="text" id="l_client" placeholder="A123456" autocomplete="username">
+    </div>
+    <div class="lfld">
+      <label>MPIN</label>
+      <input type="password" id="l_mpin" placeholder="Your Angel One MPIN">
+    </div>
+    <div class="lfld">
+      <label>TOTP (6-digit from Google Authenticator)</label>
+      <input type="text" id="l_totp" placeholder="482910" maxlength="6">
+    </div>
+    <div class="lfld">
+      <label>API Key</label>
+      <input type="text" id="l_apikey" placeholder="Your SmartAPI key">
+    </div>
+
+    <button class="btn-login" id="loginBtn" onclick="doLogin()">
+      <div class="lspin" id="lspin"></div>
+      <span id="ltxt">🔑 CONNECT &amp; START V2 FEED</span>
+    </button>
+    <div class="lerr" id="lerr"></div>
+  </div>
+</div>
+
+<!-- ═══ APP ═══ -->
+<div id="appScreen" style="display:none">
+
+<header>
+  <div class="logo"><div class="pulse"></div>OC SENTINEL <span style="font-size:11px;color:var(--txt3);letter-spacing:2px;margin-left:6px;">V2</span></div>
+  <div class="hdr-r">
+    <div class="ws-pill"><div class="wsdot" id="wsdot"></div><span id="wsTxt">CONNECTING...</span></div>
+    <span style="font-size:11px;color:var(--txt2)">👤 <span id="uName">—</span></span>
+    <button class="btn-lo" onclick="logout()">LOGOUT</button>
+    <div class="clock" id="clk">--:--:--</div>
+  </div>
+</header>
+
+<div class="tkbar">
+  <div class="tklbl">LIVE V2</div>
+  <div class="tkinner"><div class="tktrack" id="ticker">Connecting to Angel One WebSocket V2 → binary frame feed starting...</div></div>
+</div>
+
+<div class="wrap">
+
+  <div class="ctrl">
+    <div class="tabs">
+      <button class="tab on" onclick="setInst('NIFTY',this)">NIFTY</button>
+      <button class="tab"    onclick="setInst('BANKNIFTY',this)">BANKNIFTY</button>
+      <button class="tab"    onclick="setInst('FINNIFTY',this)">FINNIFTY</button>
+    </div>
+    <select class="expsel" id="expSel" onchange="changeFeed()">
+      <option>Loading...</option>
+    </select>
+    <button class="btn-ai" id="goBtn" onclick="analyze()">
+      <div class="aspin"></div><span class="atxt">⚡ ANALYZE NOW</span>
+    </button>
+    <div class="src-tag" id="srcTag">● CONNECTING</div>
+    <div class="ar-wrap">
+      <input type="checkbox" id="arChk" onchange="toggleAR()">
+      <label for="arChk">AUTO 3 MIN</label>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat">  <div class="slbl">Spot Price</div><div class="sval" id="s_spot">—</div><div class="ssub" id="s_chg">Live</div></div>
+    <div class="stat g"><div class="slbl">PCR</div><div class="sval" id="s_pcr">—</div><div class="ssub" id="s_pbias">—</div></div>
+    <div class="stat a"><div class="slbl">Max Pain</div><div class="sval" id="s_mp">—</div><div class="ssub" id="s_mpdist">—</div></div>
+    <div class="stat p"><div class="slbl">Total CE OI</div><div class="sval" id="s_ceoi">—</div><div class="ssub">Calls Written</div></div>
+    <div class="stat r"><div class="slbl">Total PE OI</div><div class="sval" id="s_peoi">—</div><div class="ssub">Puts Written</div></div>
+    <div class="stat">  <div class="slbl">ATM IV</div><div class="sval" id="s_iv">—</div><div class="ssub" id="s_ivlbl">—</div></div>
+  </div>
+
+  <div class="main">
+
+    <!-- SIGNAL CARD -->
+    <div class="sigcard">
+      <div class="sighdr"><span>🤖 AI SIGNAL</span><span id="sigTime" style="font-size:10px">—</span></div>
+      <div class="sigbadge wait" id="sigBadge">AWAITING<br>ANALYSIS</div>
+      <div class="kls">
+        <div class="kl"><div class="kl-l">Support</div><div class="kl-v" id="kl_sup" style="color:var(--grn)">—</div></div>
+        <div class="kl"><div class="kl-l">Resistance</div><div class="kl-v" id="kl_res" style="color:var(--red)">—</div></div>
+      </div>
+      <div class="sigrows">
+        <div class="sigrow en"><span class="rlbl">Strike / Entry ₹</span><span class="rval" id="r_en">—</span></div>
+        <div class="sigrow sl"><span class="rlbl">Stop Loss ₹</span><span class="rval" id="r_sl">—</span></div>
+        <div class="sigrow tg"><span class="rlbl">Target ₹</span><span class="rval" id="r_tg">—</span></div>
+        <div class="sigrow">  <span class="rlbl">Risk : Reward</span><span class="rval" id="r_rr">—</span></div>
+        <div class="sigrow">  <span class="rlbl">Market Bias</span><span class="rval" id="r_bias">—</span></div>
+      </div>
+      <div class="confwrap">
+        <div class="conflbl"><span>CONFIDENCE</span><span id="confPct">—</span></div>
+        <div class="confbar"><div class="conffill" id="confFill"></div></div>
+      </div>
+      <div class="rsntitle">AI REASONING</div>
+      <div class="rsnbox" id="rsn">Connect and click ANALYZE NOW for AI signal based on live V2 data.</div>
+    </div>
+
+    <!-- OC TABLE -->
+    <div class="ocpanel">
+      <div class="ochdr">
+        <span id="ocTitle">OPTION CHAIN</span>
+        <span id="lastUpd" style="font-size:10px;color:var(--txt3)">—</span>
+      </div>
+      <div class="ocwrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="ce">OI</th><th class="ce">Chg OI</th><th class="ce">Vol</th>
+              <th class="ce">IV%</th><th class="ce">LTP</th>
+              <th class="sc">STRIKE</th>
+              <th class="pe">LTP</th><th class="pe">IV%</th>
+              <th class="pe">Vol</th><th class="pe">Chg OI</th><th class="pe">OI</th>
+            </tr>
+          </thead>
+          <tbody id="ocBody">
+            <tr><td colspan="11"><div class="empty"><div class="ico">📡</div><p>STARTING WEBSOCKET V2 FEED</p></div></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="logbox"><div class="loghdr">⚡ WEBSOCKET V2 LOG</div><div class="logbody" id="logBody"></div></div>
+
+  <div class="hist">
+    <div class="histhdr">📋 Signal History</div>
+    <div class="histlist" id="histList"><div class="hempty">No signals yet</div></div>
+  </div>
+
+</div>
+</div><!-- /appScreen -->
+
+<script>
+/* ═══════════════════════════════════════════════════
+   STATE
+═══════════════════════════════════════════════════ */
+let BACKEND = '';   // Set on login
+let apiKey  = '';
+let stomp   = null;
+let inst    = 'NIFTY';
+let busy    = false;
+let arTimer = null;
+let liveOC  = null; // Latest OC from WebSocket V2 via Spring Boot
+
+/* ═══════════════════════════════════════════════════
+   CLOCK
+═══════════════════════════════════════════════════ */
+function pad(n){return String(n).padStart(2,'0');}
+setInterval(()=>{
+  const ist = new Date(new Date().toLocaleString('en-US',{timeZone:'Asia/Kolkata'}));
+  document.getElementById('clk').textContent =
+    `${pad(ist.getHours())}:${pad(ist.getMinutes())}:${pad(ist.getSeconds())} IST`;
+},1000);
+
+/* ═══════════════════════════════════════════════════
+   LOG
+═══════════════════════════════════════════════════ */
+function log$(msg, type=''){
+  const b = document.getElementById('logBody');
+  const d = document.createElement('div'); d.className='ll '+type;
+  const t = new Date().toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata'});
+  d.textContent = `[${t}] ${msg}`;
+  b.insertBefore(d, b.firstChild);
+  if(b.children.length > 80) b.removeChild(b.lastChild);
+}
+
+/* ═══════════════════════════════════════════════════
+   TEST BACKEND
+═══════════════════════════════════════════════════ */
+async function testBackend(){
+  const url = document.getElementById('l_url').value.trim().replace(/\/$/,'');
+  if(!url){ alert('Enter your Render/Railway URL first'); return; }
+  try{
+    const r = await fetch(url+'/api/health', {signal:AbortSignal.timeout(8000)});
+    const j = await r.json();
+    if(j.status === 'UP'){
+      document.getElementById('connOk').classList.add('show');
+      document.getElementById('l_url').style.borderColor = 'var(--grn)';
+    }
+  } catch(e){
+    alert('Cannot reach backend:\n'+e.message+'\n\nMake sure your app is deployed and the URL is correct.');
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   LOGIN
+═══════════════════════════════════════════════════ */
+async function doLogin(){
+  const url    = document.getElementById('l_url').value.trim().replace(/\/$/,'');
+  const client = document.getElementById('l_client').value.trim().toUpperCase();
+  const mpin   = document.getElementById('l_mpin').value.trim();
+  const totp   = document.getElementById('l_totp').value.trim();
+  const key    = document.getElementById('l_apikey').value.trim();
+
+  if(!url)   { showErr('Enter backend URL and click TEST first.'); return; }
+  if(!client||!mpin||!totp||!key){ showErr('Fill all fields.'); return; }
+
+  BACKEND = url;
+  apiKey  = key;
+  setBusy(true); hideErr();
+
+  try{
+    const r = await fetch(BACKEND+'/api/login',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({clientCode:client, mpin, totp, apiKey:key})
+    });
+    const j = await r.json();
+
+    if(j.success){
+      document.getElementById('uName').textContent = j.name || client;
+      document.getElementById('loginScreen').style.display = 'none';
+      document.getElementById('appScreen').style.display   = 'block';
+      log$(`✅ Logged in as ${j.name||client}`, 'ok');
+
+      // 1. Connect SockJS/STOMP to Spring Boot
+      connectStomp();
+      // 2. Load expiry list
+      await loadExpiries();
+    } else {
+      showErr(j.message || 'Login failed — check credentials and TOTP');
+    }
+  } catch(e){ showErr('Cannot reach backend: '+e.message); }
+  setBusy(false);
+}
+
+function showErr(m){ const e=document.getElementById('lerr'); e.textContent=m; e.classList.add('show'); }
+function hideErr(){ document.getElementById('lerr').classList.remove('show'); }
+function setBusy(b){
+  document.getElementById('loginBtn').disabled = b;
+  document.getElementById('lspin').style.display = b?'block':'none';
+  document.getElementById('ltxt').style.display  = b?'none':'inline';
+}
+async function logout(){
+  if(stomp) stomp.disconnect();
+  await fetch(BACKEND+'/api/logout',{method:'POST'}).catch(()=>{});
+  clearInterval(arTimer);
+  liveOC = null;
+  document.getElementById('loginScreen').style.display = 'flex';
+  document.getElementById('appScreen').style.display   = 'none';
+}
+
+/* ═══════════════════════════════════════════════════
+   STOMP WEBSOCKET CONNECTION
+   Frontend → Spring Boot → Angel One V2
+═══════════════════════════════════════════════════ */
+function connectStomp(){
+  // SockJS connects to Spring Boot /ws endpoint
+  const sock  = new SockJS(BACKEND + '/ws');
+  stomp = Stomp.over(sock);
+  stomp.debug = null; // Silence STOMP debug
+
+  stomp.connect({}, () => {
+    log$('✅ STOMP connected to Spring Boot', 'ok');
+    setWS('conn', 'V2 LIVE');
+
+    // ── /topic/oc-update ─────────────────────────────
+    // Spring Boot pushes this when new V2 binary frame arrives
+    // or REST poll refreshes data. This is where live OC appears.
+    stomp.subscribe('/topic/oc-update', msg => {
+      const oc = JSON.parse(msg.body);
+      liveOC = oc;
+      renderStats(oc);
+      renderOC(oc);
+      renderTicker(oc);
+      setSrc(oc.dataSource);
+      document.getElementById('lastUpd').textContent =
+        'Updated ' + new Date().toLocaleTimeString('en-IN',{timeZone:'Asia/Kolkata'});
+      log$(`V2 update: ${oc.instrument} spot=${oc.spot} src=${oc.dataSource}`, 'ok');
+    });
+
+    // ── /topic/status ─────────────────────────────────
+    // Spring Boot sends connection status updates
+    stomp.subscribe('/topic/status', msg => {
+      const s = JSON.parse(msg.body);
+      const t = s.status==='CONNECTED'?'ok':s.status==='ERROR'?'err':'warn';
+      log$(s.message, t);
+      const dot = s.status==='CONNECTED'?'conn':s.status==='ERROR'?'err':'warn';
+      const txt = s.status==='CONNECTED'?'V2 LIVE':s.status;
+      setWS(dot, txt);
+    });
+
+  }, err => {
+    log$('STOMP error: '+err, 'err');
+    setWS('err', 'DISCONNECTED');
+    setTimeout(connectStomp, 5000); // Auto reconnect
+  });
+
+  sock.onclose = () => {
+    log$('STOMP disconnected — reconnecting...', 'warn');
+    setWS('warn', 'RECONNECTING...');
+    setTimeout(connectStomp, 5000);
+  };
+}
+
+/* ═══════════════════════════════════════════════════
+   EXPIRIES + FEED CONTROL
+═══════════════════════════════════════════════════ */
+async function loadExpiries(){
+  const sel = document.getElementById('expSel');
+  try{
+    const r = await fetch(`${BACKEND}/api/expiries?instrument=${inst}&apiKey=${apiKey}`);
+    const j = await r.json();
+    if(j.success && j.expiries.length){
+      sel.innerHTML = j.expiries.map(e=>`<option value="${e}">${e}</option>`).join('');
+      log$(`Loaded ${j.expiries.length} expiries for ${inst}`, 'ok');
+    }
+  } catch(e){ log$('Expiry error: '+e.message,'err'); }
+  startFeed();
+}
+
+async function startFeed(){
+  const expiry = document.getElementById('expSel').value;
+  try{
+    await fetch(BACKEND+'/api/start-feed',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({instrument:inst, expiry, apiKey})
+    });
+    log$(`V2 feed started: ${inst} ${expiry}`, 'inf');
+  } catch(e){ log$('Start feed error: '+e.message,'err'); }
+}
+
+function changeFeed(){ if(stomp?.connected) startFeed(); }
+
+/* ═══════════════════════════════════════════════════
+   RENDER STATS
+═══════════════════════════════════════════════════ */
+function renderStats(d){
+  const fl = el => { el.classList.add('flash'); setTimeout(()=>el.classList.remove('flash'),500); };
+  const sp = document.getElementById('s_spot');
+  sp.textContent = d.spot?.toLocaleString('en-IN') || '—'; fl(sp);
+
+  const pcr = parseFloat(d.pcr);
+  document.getElementById('s_pcr').textContent = pcr || '—';
+  if(pcr){
+    const bias = pcr>1.2?'▲ BULLISH':pcr<0.8?'▼ BEARISH':'— NEUTRAL';
+    const col  = pcr>1.2?'var(--grn)':pcr<0.8?'var(--red)':'var(--txt2)';
+    document.getElementById('s_pbias').textContent  = bias;
+    document.getElementById('s_pbias').style.color  = col;
+  }
+  if(d.maxPain){
+    document.getElementById('s_mp').textContent     = d.maxPain?.toLocaleString('en-IN');
+    const diff = d.spot - d.maxPain;
+    document.getElementById('s_mpdist').textContent = `${diff>0?'+':''}${diff.toFixed(0)} pts`;
+  }
+  if(d.totalCEOI) document.getElementById('s_ceoi').textContent = fmtOI(d.totalCEOI);
+  if(d.totalPEOI) document.getElementById('s_peoi').textContent = fmtOI(d.totalPEOI);
+  if(d.atmIV){
+    document.getElementById('s_iv').textContent    = d.atmIV+'%';
+    document.getElementById('s_ivlbl').textContent = parseFloat(d.atmIV)>15?'⚡ HIGH IV':'✓ NORMAL';
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   RENDER OC TABLE
+═══════════════════════════════════════════════════ */
+function renderOC(d){
+  if(!d?.strikes?.length) return;
+  const step = inst==='BANKNIFTY'?100:50;
+  const idx  = d.strikes.findIndex(s=>s.strike>=d.spot);
+  const vis  = d.strikes.slice(Math.max(0,idx-13), Math.min(d.strikes.length,idx+14));
+  const maxO = Math.max(...vis.map(s=>Math.max(s.ce?.oi||0,s.pe?.oi||0)),1);
+
+  document.getElementById('ocBody').innerHTML = vis.map(s=>{
+    const atm = Math.abs(s.strike-d.spot)<step;
+    const cw  = Math.round(((s.ce?.oi||0)/maxO)*60);
+    const pw  = Math.round(((s.pe?.oi||0)/maxO)*60);
+    return`<tr class="${atm?'atm':''}">
+      <td><div class="barcell"><div class="obar cb" style="width:${cw}px"></div>${fmtOI(s.ce?.oi)}</div></td>
+      <td class="${(s.ce?.changeOI||0)>=0?'pos':'neg'}">${fmtOI(s.ce?.changeOI,true)}</td>
+      <td class="mt">${fmtOI(s.ce?.volume)}</td>
+      <td class="mt">${s.ce?.iv?s.ce.iv.toFixed(1)+'%':'—'}</td>
+      <td style="font-weight:600">${s.ce?.ltp?'₹'+s.ce.ltp.toFixed(2):'—'}</td>
+      <td class="sk">${s.strike.toLocaleString('en-IN')}${atm?'<span class="atm-tag">ATM</span>':''}</td>
+      <td style="font-weight:600">${s.pe?.ltp?'₹'+s.pe.ltp.toFixed(2):'—'}</td>
+      <td class="mt">${s.pe?.iv?s.pe.iv.toFixed(1)+'%':'—'}</td>
+      <td class="mt">${fmtOI(s.pe?.volume)}</td>
+      <td class="${(s.pe?.changeOI||0)>=0?'pos':'neg'}">${fmtOI(s.pe?.changeOI,true)}</td>
+      <td><div class="barcell">${fmtOI(s.pe?.oi)}<div class="obar pb" style="width:${pw}px"></div></div></td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('ocTitle').textContent = `OPTION CHAIN — ${inst}`;
+}
+
+/* ═══════════════════════════════════════════════════
+   CLAUDE AI ANALYSIS
+═══════════════════════════════════════════════════ */
+async function analyze(){
+  if(busy) return;
+  if(!liveOC){ log$('No live data yet','warn'); return; }
+
+  busy = true;
+  const btn = document.getElementById('goBtn');
+  btn.classList.add('ld'); btn.disabled=true;
+  document.getElementById('rsn').textContent = '🤖 Claude AI analyzing live V2 data...';
+
+  try{
+    const d = liveOC;
+    const top5ce = [...d.strikes].sort((a,b)=>(b.ce?.oi||0)-(a.ce?.oi||0)).slice(0,5)
+      .map(s=>`  ${s.strike}: OI=${fmtOI(s.ce?.oi)}, ChgOI=${fmtOI(s.ce?.changeOI,true)}, LTP=₹${s.ce?.ltp||0}`).join('\n');
+    const top5pe = [...d.strikes].sort((a,b)=>(b.pe?.oi||0)-(a.pe?.oi||0)).slice(0,5)
+      .map(s=>`  ${s.strike}: OI=${fmtOI(s.pe?.oi)}, ChgOI=${fmtOI(s.pe?.changeOI,true)}, LTP=₹${s.pe?.ltp||0}`).join('\n');
+    const near   = d.strikes.filter(s=>Math.abs(s.strike-d.spot)<=500)
+      .sort((a,b)=>Math.abs((b.ce?.changeOI||0)+(b.pe?.changeOI||0))
+                  -Math.abs((a.ce?.changeOI||0)+(a.pe?.changeOI||0)))
+      .slice(0,6)
+      .map(s=>`  ${s.strike}: CE ChgOI=${fmtOI(s.ce?.changeOI,true)}, PE ChgOI=${fmtOI(s.pe?.changeOI,true)}`).join('\n');
+
+    const now = new Date().toLocaleString('en-IN',{timeZone:'Asia/Kolkata'});
+
+    const prompt = `You are an expert NSE options trader. Give a precise intraday option buying signal.
+
+DATA SOURCE: ${d.dataSource} (Angel One WebSocket V2)
+INSTRUMENT: ${d.instrument} | TIME: ${now} | EXPIRY: ${d.expiry}
+SPOT: ${d.spot} | PCR: ${d.pcr} | MAX PAIN: ${d.maxPain}
+CE WALL (Resistance): ${d.maxCEStrike} | PE WALL (Support): ${d.maxPEStrike}
+ATM IV: ${d.atmIV}% | Total CE OI: ${fmtOI(d.totalCEOI)} | Total PE OI: ${fmtOI(d.totalPEOI)}
+
+TOP 5 CE OI STRIKES (Resistance):
+${top5ce}
+
+TOP 5 PE OI STRIKES (Support):
+${top5pe}
+
+FRESH OI CHANGE NEAR ATM (last update):
+${near}
+
+SIGNAL RULES:
+1. PCR>1.3 = strong put writing below = BUY CE
+2. PCR<0.7 = strong call writing above = BUY PE
+3. CE OI unwinding (negative chgOI) at resistance = bulls winning = BUY CE
+4. PE OI unwinding (negative chgOI) at support = bears winning = BUY PE
+5. Fresh heavy CE OI buildup above spot = ceiling = BUY PE
+6. Fresh heavy PE OI buildup below spot = floor = BUY CE
+7. Spot between max pain and ATM, rangebound = NO TRADE
+8. ATM IV > 18% = expensive premiums for buyers = NO TRADE
+9. Entry = ATM or 1-strike ITM option current LTP
+10. SL = 30-35% below entry. Target = 2.5x the risk.
+
+Respond ONLY with valid JSON, no extra text:
+{"signal":"BUY_CE"|"BUY_PE"|"NO_TRADE","strike":<number|null>,"entry":<number|null>,"stopLoss":<number|null>,"target":<number|null>,"confidence":<0-100>,"marketBias":"BULLISH"|"BEARISH"|"NEUTRAL","keySupport":<number>,"keyResistance":<number>,"reasoning":"<3-4 sentences citing exact numbers from the data above>"}`;
+
+    const res = await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        model:'claude-sonnet-4-20250514', max_tokens:900,
+        messages:[{role:'user',content:prompt}]
+      })
+    });
+    const j   = await res.json();
+    const sig = JSON.parse((j.content?.[0]?.text||'').replace(/```json|```/g,'').trim());
+    showSignal(sig);
+    log$(`SIGNAL: ${sig.signal} ${sig.strike||''} | Conf ${sig.confidence}%`, 'ok');
+
+  } catch(e){
+    document.getElementById('rsn').textContent = '❌ '+e.message;
+    log$('Analysis error: '+e.message, 'err');
+  } finally {
+    busy=false; btn.classList.remove('ld'); btn.disabled=false;
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   SHOW SIGNAL
+═══════════════════════════════════════════════════ */
+function showSignal(sig){
+  const now = new Date().toLocaleString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit'});
+  document.getElementById('sigTime').textContent = now+' IST';
+
+  const b = document.getElementById('sigBadge');
+  if(sig.signal==='BUY_CE')     { b.className='sigbadge bce'; b.innerHTML=`BUY CE<br><span style="font-size:18px">${sig.strike} CE</span>`; }
+  else if(sig.signal==='BUY_PE'){ b.className='sigbadge bpe'; b.innerHTML=`BUY PE<br><span style="font-size:18px">${sig.strike} PE</span>`; }
+  else                           { b.className='sigbadge nt';  b.innerHTML=`NO TRADE<br><span style="font-size:12px">WAIT FOR SETUP</span>`; }
+
+  document.getElementById('r_en').textContent   = sig.entry    ? `₹${sig.entry}`    : '—';
+  document.getElementById('r_sl').textContent   = sig.stopLoss ? `₹${sig.stopLoss}` : '—';
+  document.getElementById('r_tg').textContent   = sig.target   ? `₹${sig.target}`   : '—';
+  document.getElementById('kl_sup').textContent = sig.keySupport    ? sig.keySupport.toLocaleString('en-IN')    : '—';
+  document.getElementById('kl_res').textContent = sig.keyResistance ? sig.keyResistance.toLocaleString('en-IN') : '—';
+
+  if(sig.entry&&sig.stopLoss&&sig.target){
+    const rk=sig.entry-sig.stopLoss, rw=sig.target-sig.entry;
+    if(rk>0) document.getElementById('r_rr').textContent=`1 : ${(rw/rk).toFixed(1)}`;
+  }
+  const bc={BULLISH:'var(--grn)',BEARISH:'var(--red)',NEUTRAL:'var(--amb)'};
+  document.getElementById('r_bias').textContent = sig.marketBias||'—';
+  document.getElementById('r_bias').style.color = bc[sig.marketBias]||'var(--txt)';
+
+  const c = sig.confidence||0;
+  document.getElementById('confPct').textContent  = c+'%';
+  document.getElementById('confFill').style.width = c+'%';
+  document.getElementById('rsn').textContent      = sig.reasoning||'—';
+  pushHistory(sig, now);
+}
+
+/* ═══════════════════════════════════════════════════
+   HISTORY
+═══════════════════════════════════════════════════ */
+function pushHistory(sig,time){
+  const list = document.getElementById('histList');
+  if(list.querySelector('.hempty')) list.innerHTML='';
+  const bc   = sig.signal==='BUY_CE'?'hce':sig.signal==='BUY_PE'?'hpe':'hnt';
+  const lbl  = sig.signal==='BUY_CE'?`${sig.strike} CE`:sig.signal==='BUY_PE'?`${sig.strike} PE`:'NO TRADE';
+  const div  = document.createElement('div'); div.className='hi';
+  div.innerHTML=`<span class="hbadge ${bc}">${sig.signal}</span><span style="color:var(--acc)">${inst}</span><span>${lbl}</span><span class="mt">Entry:${sig.entry?'₹'+sig.entry:'—'}</span><span class="mt">SL:${sig.stopLoss?'₹'+sig.stopLoss:'—'}</span><span class="mt">T:${sig.target?'₹'+sig.target:'—'}</span><span class="mt" style="margin-left:auto;color:var(--txt3)">${time}</span>`;
+  list.insertBefore(div, list.firstChild);
+}
+
+/* ═══════════════════════════════════════════════════
+   TICKER
+═══════════════════════════════════════════════════ */
+function renderTicker(d){
+  const items = [
+    `${d.instrument} <span class="up">${d.spot?.toLocaleString('en-IN')}</span>`,
+    `PCR <span class="${parseFloat(d.pcr)>1?'up':'dn'}">${d.pcr}</span>`,
+    `MAX PAIN ${d.maxPain?.toLocaleString('en-IN')}`,
+    `CE WALL <span class="dn">${d.maxCEStrike?.toLocaleString('en-IN')}</span>`,
+    `PE WALL <span class="up">${d.maxPEStrike?.toLocaleString('en-IN')}</span>`,
+    `ATM IV ${d.atmIV}%`,
+    `SOURCE <span style="color:var(--amb)">${d.dataSource}</span>`,
+  ];
+  document.getElementById('ticker').innerHTML = items.map(i=>`<span class="tki">${i}</span>`).join('');
+}
+
+/* ═══════════════════════════════════════════════════
+   HELPERS
+═══════════════════════════════════════════════════ */
+function setInst(i,el){
+  inst=i;
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
+  el.classList.add('on');
+  if(stomp?.connected) loadExpiries();
+}
+function toggleAR(){
+  clearInterval(arTimer);
+  if(document.getElementById('arChk').checked){
+    arTimer=setInterval(analyze,3*60*1000);
+    log$('Auto analyze every 3 min','ok');
+  }
+}
+function setWS(cls,txt){
+  document.getElementById('wsdot').className='wsdot '+cls;
+  document.getElementById('wsTxt').textContent=txt;
+}
+function setSrc(src){
+  const t=document.getElementById('srcTag');
+  if(src==='WEBSOCKET_V2'){ t.className='src-tag v2'; t.textContent='⚡ V2 LIVE'; }
+  else{ t.className='src-tag rest'; t.textContent='↻ REST'; }
+}
+function fmtOI(v,s=false){
+  if(v===null||v===undefined) return'—';
+  const a=Math.abs(v),g=s?(v>=0?'+':'-'):'';
+  if(a>=10000000) return g+(a/10000000).toFixed(2)+'Cr';
+  if(a>=100000)   return g+(a/100000).toFixed(2)+'L';
+  if(a>=1000)     return g+(a/1000).toFixed(1)+'K';
+  return g+String(v);
+}
+document.getElementById('l_totp').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+</script>
+</body>
+</html>
