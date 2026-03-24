@@ -362,9 +362,9 @@ async function testBackend(){
   const url = document.getElementById('l_url').value.trim().replace(/\/$/,'');
   if(!url){ alert('Enter your Render/Railway URL first'); return; }
   try{
-    const r = await fetch(url+'/api/health', {signal:AbortSignal.timeout(8000)});
+    const r = await fetch(url+'/api/session', {signal:AbortSignal.timeout(8000)});
     const j = await r.json();
-    if(j.status === 'UP'){
+    if(j.success !== undefined){
       document.getElementById('connOk').classList.add('show');
       document.getElementById('l_url').style.borderColor = 'var(--grn)';
     }
@@ -586,62 +586,14 @@ async function analyze(){
   document.getElementById('rsn').textContent = '🤖 Claude AI analyzing live V2 data...';
 
   try{
-    const d = liveOC;
-    const top5ce = [...d.strikes].sort((a,b)=>(b.ce?.oi||0)-(a.ce?.oi||0)).slice(0,5)
-      .map(s=>`  ${s.strike}: OI=${fmtOI(s.ce?.oi)}, ChgOI=${fmtOI(s.ce?.changeOI,true)}, LTP=₹${s.ce?.ltp||0}`).join('\n');
-    const top5pe = [...d.strikes].sort((a,b)=>(b.pe?.oi||0)-(a.pe?.oi||0)).slice(0,5)
-      .map(s=>`  ${s.strike}: OI=${fmtOI(s.pe?.oi)}, ChgOI=${fmtOI(s.pe?.changeOI,true)}, LTP=₹${s.pe?.ltp||0}`).join('\n');
-    const near   = d.strikes.filter(s=>Math.abs(s.strike-d.spot)<=500)
-      .sort((a,b)=>Math.abs((b.ce?.changeOI||0)+(b.pe?.changeOI||0))
-                  -Math.abs((a.ce?.changeOI||0)+(a.pe?.changeOI||0)))
-      .slice(0,6)
-      .map(s=>`  ${s.strike}: CE ChgOI=${fmtOI(s.ce?.changeOI,true)}, PE ChgOI=${fmtOI(s.pe?.changeOI,true)}`).join('\n');
-
-    const now = new Date().toLocaleString('en-IN',{timeZone:'Asia/Kolkata'});
-
-    const prompt = `You are an expert NSE options trader. Give a precise intraday option buying signal.
-
-DATA SOURCE: ${d.dataSource} (Angel One WebSocket V2)
-INSTRUMENT: ${d.instrument} | TIME: ${now} | EXPIRY: ${d.expiry}
-SPOT: ${d.spot} | PCR: ${d.pcr} | MAX PAIN: ${d.maxPain}
-CE WALL (Resistance): ${d.maxCEStrike} | PE WALL (Support): ${d.maxPEStrike}
-ATM IV: ${d.atmIV}% | Total CE OI: ${fmtOI(d.totalCEOI)} | Total PE OI: ${fmtOI(d.totalPEOI)}
-
-TOP 5 CE OI STRIKES (Resistance):
-${top5ce}
-
-TOP 5 PE OI STRIKES (Support):
-${top5pe}
-
-FRESH OI CHANGE NEAR ATM (last update):
-${near}
-
-SIGNAL RULES:
-1. PCR>1.3 = strong put writing below = BUY CE
-2. PCR<0.7 = strong call writing above = BUY PE
-3. CE OI unwinding (negative chgOI) at resistance = bulls winning = BUY CE
-4. PE OI unwinding (negative chgOI) at support = bears winning = BUY PE
-5. Fresh heavy CE OI buildup above spot = ceiling = BUY PE
-6. Fresh heavy PE OI buildup below spot = floor = BUY CE
-7. Spot between max pain and ATM, rangebound = NO TRADE
-8. ATM IV > 18% = expensive premiums for buyers = NO TRADE
-9. Entry = ATM or 1-strike ITM option current LTP
-10. SL = 30-35% below entry. Target = 2.5x the risk.
-
-Respond ONLY with valid JSON, no extra text:
-{"signal":"BUY_CE"|"BUY_PE"|"NO_TRADE","strike":<number|null>,"entry":<number|null>,"stopLoss":<number|null>,"target":<number|null>,"confidence":<0-100>,"marketBias":"BULLISH"|"BEARISH"|"NEUTRAL","keySupport":<number>,"keyResistance":<number>,"reasoning":"<3-4 sentences citing exact numbers from the data above>"}`;
-
-    const res = await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        model:'claude-sonnet-4-20250514', max_tokens:900,
-        messages:[{role:'user',content:prompt}]
-      })
+    const res = await fetch(BACKEND + '/api/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ instrument: inst, apiKey })
     });
-    const j   = await res.json();
-    const sig = JSON.parse((j.content?.[0]?.text||'').replace(/```json|```/g,'').trim());
+    const sig = await res.json();
     showSignal(sig);
-    log$(`SIGNAL: ${sig.signal} ${sig.strike||''} | Conf ${sig.confidence}%`, 'ok');
+    log$(`SIGNAL: ${sig.verdict} | Entry: ${sig.entryPrice}`, 'ok');
 
   } catch(e){
     document.getElementById('rsn').textContent = '❌ '+e.message;
@@ -659,18 +611,18 @@ function showSignal(sig){
   document.getElementById('sigTime').textContent = now+' IST';
 
   const b = document.getElementById('sigBadge');
-  if(sig.signal==='BUY_CE')     { b.className='sigbadge bce'; b.innerHTML=`BUY CE<br><span style="font-size:18px">${sig.strike} CE</span>`; }
-  else if(sig.signal==='BUY_PE'){ b.className='sigbadge bpe'; b.innerHTML=`BUY PE<br><span style="font-size:18px">${sig.strike} PE</span>`; }
+  if(sig.verdict==='BUY CE')     { b.className='sigbadge bce'; b.innerHTML=`BUY CE<br><span style="font-size:18px">${sig.strike} CE</span>`; }
+  else if(sig.verdict==='BUY PE'){ b.className='sigbadge bpe'; b.innerHTML=`BUY PE<br><span style="font-size:18px">${sig.strike} PE</span>`; }
   else                           { b.className='sigbadge nt';  b.innerHTML=`NO TRADE<br><span style="font-size:12px">WAIT FOR SETUP</span>`; }
 
-  document.getElementById('r_en').textContent   = sig.entry    ? `₹${sig.entry}`    : '—';
-  document.getElementById('r_sl').textContent   = sig.stopLoss ? `₹${sig.stopLoss}` : '—';
-  document.getElementById('r_tg').textContent   = sig.target   ? `₹${sig.target}`   : '—';
+  document.getElementById('r_en').textContent   = sig.entryPrice ? `₹${sig.entryPrice}` : '—';
+  document.getElementById('r_sl').textContent   = sig.stopLoss   ? `₹${sig.stopLoss}`   : '—';
+  document.getElementById('r_tg').textContent   = sig.target     ? `₹${sig.target}`     : '—';
   document.getElementById('kl_sup').textContent = sig.keySupport    ? sig.keySupport.toLocaleString('en-IN')    : '—';
   document.getElementById('kl_res').textContent = sig.keyResistance ? sig.keyResistance.toLocaleString('en-IN') : '—';
 
-  if(sig.entry&&sig.stopLoss&&sig.target){
-    const rk=sig.entry-sig.stopLoss, rw=sig.target-sig.entry;
+  if(sig.entryPrice && sig.stopLoss && sig.target){
+    const rk=sig.entryPrice-sig.stopLoss, rw=sig.target-sig.entryPrice;
     if(rk>0) document.getElementById('r_rr').textContent=`1 : ${(rw/rk).toFixed(1)}`;
   }
   const bc={BULLISH:'var(--grn)',BEARISH:'var(--red)',NEUTRAL:'var(--amb)'};
@@ -690,10 +642,10 @@ function showSignal(sig){
 function pushHistory(sig,time){
   const list = document.getElementById('histList');
   if(list.querySelector('.hempty')) list.innerHTML='';
-  const bc   = sig.signal==='BUY_CE'?'hce':sig.signal==='BUY_PE'?'hpe':'hnt';
-  const lbl  = sig.signal==='BUY_CE'?`${sig.strike} CE`:sig.signal==='BUY_PE'?`${sig.strike} PE`:'NO TRADE';
+  const bc   = sig.verdict==='BUY CE'?'hce':sig.verdict==='BUY PE'?'hpe':'hnt';
+  const lbl  = sig.verdict==='BUY CE'?`${sig.strike} CE`:sig.verdict==='BUY PE'?`${sig.strike} PE`:'NO TRADE';
   const div  = document.createElement('div'); div.className='hi';
-  div.innerHTML=`<span class="hbadge ${bc}">${sig.signal}</span><span style="color:var(--acc)">${inst}</span><span>${lbl}</span><span class="mt">Entry:${sig.entry?'₹'+sig.entry:'—'}</span><span class="mt">SL:${sig.stopLoss?'₹'+sig.stopLoss:'—'}</span><span class="mt">T:${sig.target?'₹'+sig.target:'—'}</span><span class="mt" style="margin-left:auto;color:var(--txt3)">${time}</span>`;
+  div.innerHTML=`<span class="hbadge ${bc}">${sig.verdict}</span><span style="color:var(--acc)">${inst}</span><span>${lbl}</span><span class="mt">Entry:${sig.entryPrice?'₹'+sig.entryPrice:'—'}</span><span class="mt">SL:${sig.stopLoss?'₹'+sig.stopLoss:'—'}</span><span class="mt">T:${sig.target?'₹'+sig.target:'—'}</span><span class="mt" style="margin-left:auto;color:var(--txt3)">${time}</span>`;
   list.insertBefore(div, list.firstChild);
 }
 
