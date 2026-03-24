@@ -586,9 +586,13 @@ async function analyze(){
   document.getElementById('rsn').textContent = '🤖 Claude AI analyzing live V2 data...';
 
   try{
-    const res = await fetch(BACKEND + '/api/analyze', {
+    const res = await fetch('https://api.anthropic.com/v1/messages',{
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+  'Content-Type': 'application/json',
+  'x-api-key': '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',
+  'anthropic-version': '2023-06-01'
+      },
       body: JSON.stringify({ instrument: inst, apiKey })
     });
     const sig = await res.json();
