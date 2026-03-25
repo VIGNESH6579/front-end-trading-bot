@@ -586,18 +586,13 @@ async function analyze(){
   document.getElementById('rsn').textContent = '🤖 Claude AI analyzing live V2 data...';
 
   try{
-    const res = await fetch('https://api.anthropic.com/v1/messages',{
-      method: 'POST',
-      headers: { 
-  'Content-Type': 'application/json',
-  'x-api-key': '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',
-  'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({ instrument: inst, apiKey })
-    });
+    // Never call Anthropic directly from the browser (CORS + API key exposure).
+    // Call backend, which performs AI analysis server-side.
+    const res = await fetch(`${BACKEND}/api/analyze`, { method: 'POST' });
     const sig = await res.json();
     showSignal(sig);
-    log$(`SIGNAL: ${sig.verdict} | Entry: ${sig.entryPrice}`, 'ok');
+    const entry = sig.entryPrice ?? sig.entry;
+    log$(`SIGNAL: ${sig.verdict} | Entry: ${entry ?? '—'}`, 'ok');
 
   } catch(e){
     document.getElementById('rsn').textContent = '❌ '+e.message;
@@ -614,30 +609,51 @@ function showSignal(sig){
   const now = new Date().toLocaleString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit'});
   document.getElementById('sigTime').textContent = now+' IST';
 
+  const atmStrike = (() => {
+    if(!liveOC?.strikes?.length || !liveOC?.spot) return null;
+    let best = liveOC.strikes[0].strike, bestD = Math.abs(best - liveOC.spot);
+    for(const s of liveOC.strikes){
+      const d = Math.abs(s.strike - liveOC.spot);
+      if(d < bestD){ bestD = d; best = s.strike; }
+    }
+    return best;
+  })();
+
   const b = document.getElementById('sigBadge');
-  if(sig.verdict==='BUY CE')     { b.className='sigbadge bce'; b.innerHTML=`BUY CE<br><span style="font-size:18px">${sig.strike} CE</span>`; }
-  else if(sig.verdict==='BUY PE'){ b.className='sigbadge bpe'; b.innerHTML=`BUY PE<br><span style="font-size:18px">${sig.strike} PE</span>`; }
+  if(sig.verdict==='BUY CE')     { b.className='sigbadge bce'; b.innerHTML=`BUY CE<br><span style="font-size:18px">${atmStrike ?? 'ATM'} CE</span>`; }
+  else if(sig.verdict==='BUY PE'){ b.className='sigbadge bpe'; b.innerHTML=`BUY PE<br><span style="font-size:18px">${atmStrike ?? 'ATM'} PE</span>`; }
   else                           { b.className='sigbadge nt';  b.innerHTML=`NO TRADE<br><span style="font-size:12px">WAIT FOR SETUP</span>`; }
 
-  document.getElementById('r_en').textContent   = sig.entryPrice ? `₹${sig.entryPrice}` : '—';
+  const entry = sig.entryPrice ?? sig.entry;
+  document.getElementById('r_en').textContent   = entry ? `₹${entry}` : '—';
   document.getElementById('r_sl').textContent   = sig.stopLoss   ? `₹${sig.stopLoss}`   : '—';
   document.getElementById('r_tg').textContent   = sig.target     ? `₹${sig.target}`     : '—';
-  document.getElementById('kl_sup').textContent = sig.keySupport    ? sig.keySupport.toLocaleString('en-IN')    : '—';
-  document.getElementById('kl_res').textContent = sig.keyResistance ? sig.keyResistance.toLocaleString('en-IN') : '—';
+  document.getElementById('kl_sup').textContent = liveOC?.maxPEStrike ? liveOC.maxPEStrike.toLocaleString('en-IN') : '—';
+  document.getElementById('kl_res').textContent = liveOC?.maxCEStrike ? liveOC.maxCEStrike.toLocaleString('en-IN') : '—';
 
-  if(sig.entryPrice && sig.stopLoss && sig.target){
-    const rk=sig.entryPrice-sig.stopLoss, rw=sig.target-sig.entryPrice;
+  if(entry && sig.stopLoss && sig.target){
+    const rk=entry-sig.stopLoss, rw=sig.target-entry;
     if(rk>0) document.getElementById('r_rr').textContent=`1 : ${(rw/rk).toFixed(1)}`;
+  } else {
+    document.getElementById('r_rr').textContent = '—';
   }
   const bc={BULLISH:'var(--grn)',BEARISH:'var(--red)',NEUTRAL:'var(--amb)'};
-  document.getElementById('r_bias').textContent = sig.marketBias||'—';
-  document.getElementById('r_bias').style.color = bc[sig.marketBias]||'var(--txt)';
+  const pcr = parseFloat(liveOC?.pcr);
+  const marketBias = Number.isFinite(pcr) ? (pcr>1.2?'BULLISH':pcr<0.8?'BEARISH':'NEUTRAL') : null;
+  document.getElementById('r_bias').textContent = marketBias||'—';
+  document.getElementById('r_bias').style.color = bc[marketBias]||'var(--txt)';
 
-  const c = sig.confidence||0;
-  document.getElementById('confPct').textContent  = c+'%';
-  document.getElementById('confFill').style.width = c+'%';
+  // Backend does not currently return confidence; keep UI stable.
+  document.getElementById('confPct').textContent  = '—';
+  document.getElementById('confFill').style.width = '0%';
   document.getElementById('rsn').textContent      = sig.reasoning||'—';
-  pushHistory(sig, now);
+  pushHistory({
+    verdict: sig.verdict,
+    strike: atmStrike ?? '',
+    entryPrice: entry,
+    stopLoss: sig.stopLoss,
+    target: sig.target
+  }, now);
 }
 
 /* ═══════════════════════════════════════════════════
